@@ -7,38 +7,68 @@
 //
 
 import Cocoa
+import GRDB
 
 class Document: NSDocument {
-
+    
+    let memoryDBQueue = DatabaseQueue()
+    
     override init() {
         super.init()
         // Add your subclass-specific initialization here.
+        try! memoryDBQueue.write { db in
+            try db.execute("""
+        CREATE TABLE entry (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL)
+        """)
+            
+            
+        }
     }
-
+    
     override class var autosavesInPlace: Bool {
         return true
     }
-
+    
     override func makeWindowControllers() {
         // Returns the Storyboard that contains your Document window.
         let storyboard = NSStoryboard(name: NSStoryboard.Name("Main"), bundle: nil)
         let windowController = storyboard.instantiateController(withIdentifier: NSStoryboard.SceneIdentifier("Document Window Controller")) as! NSWindowController
         self.addWindowController(windowController)
+        
+        do {
+            try memoryDBQueue.read { db in
+                // Fetch database rows
+                let rows = try Row.fetchCursor(db, "SELECT * FROM entry")
+                while let row = try rows.next() {
+                    let title: String = row["title"]
+                    NSLog("Title: " + title)
+                }
+            }
+        } catch {
+            NSLog("Reading DB Error!")
+        }
     }
-
-    override func data(ofType typeName: String) throws -> Data {
-        // Insert code here to write your document to data of the specified type. If outError != nil, ensure that you create and set an appropriate error when returning nil.
-        // You can also choose to override fileWrapperOfType:error:, writeToURL:ofType:error:, or writeToURL:ofType:forSaveOperation:originalContentsURL:error: instead.
-        throw NSError(domain: NSOSStatusErrorDomain, code: unimpErr, userInfo: nil)
+    
+    override func write(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType, originalContentsURL absoluteOriginalContentsURL: URL?) throws {
+        let destination = try DatabaseQueue(path: url.path)
+        do {
+            try memoryDBQueue.backup(to: destination)
+        } catch {
+            throw NSError(domain: NSOSStatusErrorDomain, code: unimpErr, userInfo: nil)
+        }
     }
-
-    override func read(from data: Data, ofType typeName: String) throws {
-        // Insert code here to read your document from the given data of the specified type. If outError != nil, ensure that you create and set an appropriate error when returning false.
-        // You can also choose to override readFromFileWrapper:ofType:error: or readFromURL:ofType:error: instead.
-        // If you override either of these, you should also override -isEntireFileLoaded to return false if the contents are lazily loaded.
-        throw NSError(domain: NSOSStatusErrorDomain, code: unimpErr, userInfo: nil)
+    
+    override func read(from url: URL, ofType typeName: String) throws {
+        let source = try DatabaseQueue(path: url.path)
+        do {
+            try source.backup(to: memoryDBQueue)
+        } catch {
+            throw NSError(domain: NSOSStatusErrorDomain, code: unimpErr, userInfo: nil)
+        }
     }
-
-
+    
+    
 }
 
